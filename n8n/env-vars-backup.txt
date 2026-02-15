@@ -1,0 +1,1 @@
+{'name': 'N8N_PORT', 'value': '8080'};{'name': 'N8N_ENCRYPTION_KEY', 'value': 'westley-secret-key-8829'};{'name': 'N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS', 'value': 'true'};{'name': 'DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED', 'value': 'false'};{'name': 'WEBHOOK_URL', 'value': 'https://westley-n8n-engine-613326823338.us-central1.run.app/'}
