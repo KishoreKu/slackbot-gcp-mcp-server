@@ -1,0 +1,2 @@
+mcp
+google-cloud-sdk  # Optional, but good to list
