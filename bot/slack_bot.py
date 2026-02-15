@@ -44,8 +44,12 @@ async def handle_message(message, say):
         # The connection happens automatically here now
         tools = await client.get_tools()
 
-        # Initialize Model (Llama 3.1)
-        llm = ChatOllama(model="llama3.1", temperature=0)
+        # Initialize Model
+        llm = ChatOllama(
+            model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
+            temperature=0,
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        )
 
         # Create the Agent (LangGraph)
         agent = create_react_agent(llm, tools)
