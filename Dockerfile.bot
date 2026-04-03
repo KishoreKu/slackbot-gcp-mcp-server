@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+RUN useradd -m -u 1000 gubbu
+
+WORKDIR /app
+
+COPY bot/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY bot/ ./bot/
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV GCP_PROJECT=slb-ai-agent-prod
+ENV GCP_LOCATION=us-central1
+ENV GEMINI_MODEL=gemini-2.0-flash-exp
+
+USER gubbu
+
+CMD ["python", "bot/slack_bot.py"]

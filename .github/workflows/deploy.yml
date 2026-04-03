@@ -1,0 +1,74 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [master, main]
+
+env:
+  GCP_PROJECT_ID: slb-ai-agent-prod
+  GCP_REGION: us-central1
+
+jobs:
+  deploy-anomaly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push anomaly-api
+        run: |
+          cd anomaly
+          docker build -t gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }} .
+          docker push gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }}
+
+      - name: Deploy anomaly-api to Cloud Run
+        run: |
+          gcloud run deploy anomaly-api \
+            --image gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }}
+
+  deploy-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push gubbu-bot
+        run: |
+          docker build -t gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }} -f Dockerfile.bot .
+          docker push gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }}
+
+      - name: Deploy gubbu-bot to Cloud Run
+        run: |
+          gcloud run deploy gubbu-bot \
+            --image gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --set-env-vars GCP_PROJECT=${{ env.GCP_PROJECT_ID }},GCP_LOCATION=${{ env.GCP_REGION }},GEMINI_MODEL=gemini-2.0-flash-exp

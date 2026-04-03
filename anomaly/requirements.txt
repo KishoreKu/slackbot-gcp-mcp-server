@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.10.0
+google-cloud-firestore>=2.20.0
+google-cloud-bigquery>=3.27.0
+google-cloud-secret-manager>=2.21.0
+vertexai>=1.60.0
+google-auth>=2.35.0
+python-dotenv>=1.0.0

@@ -1,0 +1,25 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/gubbu-bot:$COMMIT_SHA', '-f', 'Dockerfile.bot', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/gubbu-bot:$COMMIT_SHA']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'gubbu-bot'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/gubbu-bot:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--set-env-vars'
+      - 'GCP_PROJECT=slb-ai-agent-prod,GCP_LOCATION=us-central1,GEMINI_MODEL=gemini-2.0-flash-exp'
+
+images:
+  - 'gcr.io/$PROJECT_ID/gubbu-bot:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

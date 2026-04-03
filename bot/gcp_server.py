@@ -1,191 +1,345 @@
+import os
 import subprocess
 import json
 import shutil
-from time import time
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 from mcp.server.fastmcp import FastMCP
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_ollama import ChatOllama
 
-# Initialize Server
-mcp = FastMCP("GCP-DevOps-Manager")
+PROJECT_ID = "slb-ai-agent-prod"
+REGION = "us-central1"
+
+mcp = FastMCP("GCP-AI-Agent-Platform")
 
 GCLOUD_PATH = "/Users/kishorekumar/google-cloud-sdk/bin/gcloud"
 
-def run_command(cmd_list: list) -> str:
-    """Runs a shell command and returns the output or error."""
-    if cmd_list[0] == "gcloud":
-        cmd_list[0] = GCLOUD_PATH
-    # Security: Ensure gcloud is installed
+
+def run_gcloud(cmd: list) -> str:
+    if cmd[0] == "gcloud":
+        cmd[0] = GCLOUD_PATH
     if not shutil.which("gcloud"):
-        return "Error: 'gcloud' CLI is not found. Please install the Google Cloud SDK."
+        return "Error: gcloud CLI not found"
     try:
-        result = subprocess.run(
-            cmd_list,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        # Return the error message from the CLI (e.g., "Permissions denied")
         return f"COMMAND FAILED:\n{e.stderr}"
 
-@mcp.tool()
-def create_secret(name: str, value: str, project_id: str) -> str:
-    """
-    Creates a secret. Automatically enables the Secret Manager API if needed.
-    """
-    import os
-    import time  # <--- FIX: Importing it here guarantees it works
-    if not os.path.exists(GCLOUD_PATH):
-        return f"Error: gcloud not found at {GCLOUD_PATH}"
 
-    # --- STEP 1: Check & Enable API ---
-    print(f"🔍 Checking if Secret Manager API is enabled for {project_id}...")
-    
-    check_cmd = [
-        GCLOUD_PATH, "services", "list", 
-        "--project", project_id, 
-        "--enabled", 
-        "--filter=name:secretmanager.googleapis.com", 
-        "--format=value(config.name)"
+def run_aiplatform_rest(method: str, endpoint: str, body: dict = None) -> str:
+    url = f"https://{REGION}-aiplatform.googleapis.com/v1/{endpoint}"
+    cmd = [
+        GCLOUD_PATH,
+        "api",
+        "locations",
+        "predict",
+        "--endpoint",
+        url,
+        "--http-verb",
+        method,
+        "--request-body",
+        json.dumps(body) if body else "{}",
     ]
-    
-    check_result = subprocess.run(check_cmd, capture_output=True, text=True)
-    
-    if "secretmanager.googleapis.com" not in check_result.stdout:
-        print("⚙️ API not found. Enabling Secret Manager API (this takes ~10s)...")
-        enable_cmd = [
-            GCLOUD_PATH, "services", "enable", "secretmanager.googleapis.com", 
-            "--project", project_id
-        ]
-        enable_result = subprocess.run(enable_cmd, capture_output=True, text=True)
-        
-        if enable_result.returncode != 0:
-            return f"❌ Failed to enable Secret Manager API: {enable_result.stderr}"
-        
-        # Give Google Cloud a moment to propagate the change
-        time.sleep(2)
-        print("✅ Secret Manager API is enabled.")
+    return run_gcloud(cmd)
 
-    # 1. Create the secret container (idempotent: fails silently if exists)
-    subprocess.run(
-        ["gcloud", "secrets", "create", name, "--project", project_id, "--replication-policy", "automatic", "--quiet"],
-        capture_output=True
-    )
 
-    # 2. Add the payload
-    # We use pipe input for security so the secret isn't in process args
+@mcp.tool()
+def cloudrun_deploy(
+    service_name: str,
+    image: str,
+    region: str = REGION,
+    env_vars: Dict[str, str] = None,
+    allow_public: bool = False,
+) -> str:
+    """
+    Deploy a container to Cloud Run.
+    """
+    cmd = [
+        GCLOUD_PATH,
+        "run",
+        "deploy",
+        service_name,
+        "--image",
+        image,
+        "--region",
+        region,
+        "--format",
+        "json",
+    ]
+    if env_vars:
+        for k, v in env_vars.items():
+            cmd.extend(["--set-env-vars", f"{k}={v}"])
+    if allow_public:
+        cmd.append("--allow-unauthenticated")
+    output = run_gcloud(cmd)
+    try:
+        data = json.loads(output)
+        return f"Cloud Run deployed: {data.get('status', {}).get('url', 'Unknown')}"
+    except:
+        return f"Deployed. Output: {output[:300]}"
+
+
+@mcp.tool()
+def cloudrun_list_services() -> str:
+    """List all Cloud Run services."""
+    cmd = [
+        GCLOUD_PATH,
+        "run",
+        "services",
+        "list",
+        "--project",
+        PROJECT_ID,
+        "--format",
+        "json",
+    ]
+    output = run_gcloud(cmd)
+    try:
+        services = json.loads(output)
+        if not services:
+            return "No Cloud Run services found."
+        result = "Cloud Run Services:\n"
+        for s in services:
+            result += f"- {s.get('metadata', {}).get('name')}: {s.get('status', {}).get('url', 'N/A')}\n"
+        return result
+    except:
+        return output[:500]
+
+
+@mcp.tool()
+def cloudrun_get_logs(service_name: str, limit: int = 10) -> str:
+    """Get logs for a Cloud Run service."""
+    cmd = [
+        GCLOUD_PATH,
+        "logging",
+        "read",
+        f'resource.type="cloud_run_revision" AND resource.labels.service_name="{service_name}"',
+        "--project",
+        PROJECT_ID,
+        "--limit",
+        str(limit),
+        "--format",
+        "value(textPayload,jsonPayload.message)",
+    ]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def vertexai_list_models() -> str:
+    """List available Vertex AI models."""
+    cmd = [
+        GCLOUD_PATH,
+        "ai",
+        "models",
+        "list",
+        "--region",
+        REGION,
+        "--project",
+        PROJECT_ID,
+        "--format",
+        "json",
+    ]
+    output = run_gcloud(cmd)
+    try:
+        models = json.loads(output)
+        if not models:
+            return "No models found."
+        result = "Vertex AI Models:\n"
+        for m in models[:10]:
+            result += f"- {m.get('name', 'N/A')}\n"
+        return result
+    except:
+        return output[:500]
+
+
+@mcp.tool()
+def vertexai_deploy_model(
+    model_id: str, endpoint_name: str, machine_type: str = "n1-standard-4"
+) -> str:
+    """Deploy a model to Vertex AI endpoint."""
+    cmd = [
+        GCLOUD_PATH,
+        "ai",
+        "model-deployments",
+        "deploy",
+        "--model",
+        model_id,
+        "--endpoint",
+        endpoint_name,
+        "--machine-type",
+        machine_type,
+        "--region",
+        REGION,
+    ]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def vertexai_predict(endpoint_id: str, instances: List[Any]) -> str:
+    """Make a prediction using Vertex AI."""
+    cmd = [
+        GCLOUD_PATH,
+        "ai",
+        "predict",
+        "--endpoint",
+        f"{REGION}/publishers/google/models/{endpoint_id}",
+        "--json-request",
+        json.dumps({"instances": instances}),
+    ]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def firestore_create_collection(collection_id: str) -> str:
+    """Create a Firestore collection (implicit via first document)."""
+    return f"Firestore: Collection '{collection_id}' created (created when first document is added)."
+
+
+@mcp.tool()
+def firestore_add_document(collection_id: str, document_id: str, data: Dict) -> str:
+    """Add a document to Firestore."""
+    cmd = [
+        GCLOUD_PATH,
+        "firestore",
+        "documents",
+        "create",
+        f"projects/{PROJECT_ID}/databases/(default)/documents/{collection_id}/{document_id}",
+        "--from-file",
+        "-",
+    ]
     process = subprocess.Popen(
-        ["gcloud", "secrets", "versions", "add", name, "--project", project_id, "--data-file=-", "--format=json"],
+        cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
     )
-    stdout, stderr = process.communicate(input=value)
-    
+    stdout, stderr = process.communicate(input=json.dumps(data))
     if process.returncode == 0:
-        return f"✅ Secret '{name}' updated successfully."
-    else:
-        return f"❌ Error updating secret: {stderr}"
+        return f"Document {document_id} added to {collection_id}"
+    return f"Error: {stderr}"
+
 
 @mcp.tool()
-def deploy_cloud_run(service_name: str, image: str, region: str, env_secrets: Dict[str, str], allow_public: bool = False) -> str:
-    """
-    Deploys a container to Cloud Run.
-    Args:
-        service_name: Name of the service (e.g., "hotel-api")
-        image: Container image (e.g., "gcr.io/proj/img:tag")
-        env_secrets: Map of ENV_VAR to SECRET_NAME (e.g., {"DB_PASS": "DB_PASSWORD_SECRET"})
-        allow_public: If True, allows unauthenticated access (use carefully!)
-    """
-    # Build secrets flag: --set-secrets="ENV_VAR=SECRET:latest,ENV2=SEC2:latest"
-    secret_args = []
-    for env_var, secret_name in env_secrets.items():
-        secret_args.append(f"{env_var}={secret_name}:latest")
-    
+def firestore_list_collections() -> str:
+    """List Firestore collections."""
+    cmd = [GCLOUD_PATH, "firestore", "indexes", "list", "--project", PROJECT_ID]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def bigquery_query(query: str) -> str:
+    """Execute a BigQuery SQL query."""
     cmd = [
-        "gcloud", "run", "deploy", service_name,
-        "--image", image,
-        "--region", region,
-        "--format", "json"
+        GCLOUD_PATH,
+        "bq",
+        "query",
+        "--use_legacy_sql=false",
+        "--nouse_legacy_sql",
+        f"--project={PROJECT_ID}",
+        query,
+    ]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def bigquery_create_dataset(dataset_id: str) -> str:
+    """Create a BigQuery dataset."""
+    cmd = [GCLOUD_PATH, "bq", "mk", "--dataset", f"--project={PROJECT_ID}", dataset_id]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def bigquery_list_datasets() -> str:
+    """List BigQuery datasets."""
+    cmd = [GCLOUD_PATH, "bq", "ls", "--project_id", PROJECT_ID]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def bigquery_list_tables(dataset_id: str) -> str:
+    """List tables in a BigQuery dataset."""
+    cmd = [GCLOUD_PATH, "bq", "ls", "--project_id", PROJECT_ID, f"{dataset_id}"]
+    return run_gcloud(cmd)
+
+
+@mcp.tool()
+def orchestrator_route(user_request: str) -> str:
+    """
+    Route user request to the appropriate agent.
+    Determine which GCP service the user wants to interact with.
+    Returns: "cloudrun", "vertexai", "firestore", "bigquery", or "unknown"
+    """
+    user_lower = user_request.lower()
+
+    cloudrun_keywords = [
+        "deploy",
+        "cloud run",
+        "run service",
+        "container",
+        "serverless",
+        "revision",
+        "logs",
+    ]
+    vertexai_keywords = [
+        "model",
+        "predict",
+        "vertex ai",
+        "ai platform",
+        "ml",
+        "endpoint",
+        "train",
+    ]
+    firestore_keywords = [
+        "firestore",
+        "document",
+        "collection",
+        "nosql",
+        "database",
+        "store",
+    ]
+    bigquery_keywords = [
+        "bigquery",
+        "query",
+        "sql",
+        "dataset",
+        "warehouse",
+        "analytics",
     ]
 
-    if secret_args:
-        cmd.extend(["--set-secrets", ",".join(secret_args)])
-    
-    if allow_public:
-        cmd.append("--allow-unauthenticated")
-    
-    output = run_command(cmd)
-    
-    if "COMMAND FAILED" in output:
-        return output
+    for kw in cloudrun_keywords:
+        if kw in user_lower:
+            return "cloudrun"
+    for kw in vertexai_keywords:
+        if kw in user_lower:
+            return "vertexai"
+    for kw in firestore_keywords:
+        if kw in user_lower:
+            return "firestore"
+    for kw in bigquery_keywords:
+        if kw in user_lower:
+            return "bigquery"
 
-    try:
-        data = json.loads(output)
-        url = data.get("status", {}).get("url", "Unknown URL")
-        return f"🚀 Deployment Complete!\nService: {service_name}\nURL: {url}"
-    except:
-        return f"Deployment finished, but output parsing failed.\nRaw: {output[:200]}..."
+    return "unknown"
+
 
 @mcp.tool()
-def check_service_logs(service_name: str, project_id: str) -> str:
-    """
-    Reads the last 20 log entries for a specific service. 
-    Useful for debugging failed deployments.
-    """
+def gcp_status() -> str:
+    """Get GCP project status - enabled services."""
     cmd = [
-        "gcloud", "logging", "read",
-        f'resource.type="cloud_run_revision" AND resource.labels.service_name="{service_name}"',
-        "--project", project_id,
-        "--limit", "20",
-        "--format", "value(textPayload,jsonPayload.message)",
-        "--order", "desc"
-    ]
-    return run_command(cmd)
-
-@mcp.tool()
-def list_running_services(project_id: str) -> str:
-    """Lists all active Cloud Run services and their URLs."""
-    cmd = [
-        "gcloud", "run", "services", "list",
-        "--project", project_id,
-        "--format", "table(metadata.name, status.url, status.latestCreatedRevisionName)"
-    ]
-    return run_command(cmd)
-
-@mcp.tool()
-def list_enabled_services(project_id: str) -> str:
-    """
-    Lists all enabled Google Cloud APIs/Services for a given project.
-    Useful for debugging permission errors.
-    """
-    import os
-    import subprocess
-
-    if not os.path.exists(GCLOUD_PATH):
-        return f"Error: gcloud not found at {GCLOUD_PATH}"
-
-    cmd = [
-        GCLOUD_PATH, "services", "list",
+        GCLOUD_PATH,
+        "services",
+        "list",
         "--enabled",
-        "--project", project_id,
-        "--format=value(config.name)" # Clean output (just names)
+        "--project",
+        PROJECT_ID,
+        "--format=value(config.name)",
     ]
+    output = run_gcloud(cmd)
+    services = output.split("\n") if output else []
+    return f"Project: {PROJECT_ID}\nEnabled services: {len(services)}\n{services[:10]}"
 
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        
-        # Format the output to be readable
-        services = result.stdout.strip().split('\n')
-        count = len(services)
-        service_list = "\n- ".join(services[:15]) # Show top 15 to avoid spamming Slack
-        
-        return f"✅ Found {count} enabled services in '{project_id}'.\nHere are some of them:\n- {service_list}\n... (and {count - 15} more)"
-
-    except subprocess.CalledProcessError as e:
-        return f"❌ Failed to list services: {e.stderr}"
 
 if __name__ == "__main__":
+    print(f"Starting GCP AI Agent Platform for project: {PROJECT_ID}")
     mcp.run()

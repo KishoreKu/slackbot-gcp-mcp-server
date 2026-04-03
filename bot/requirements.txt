@@ -1,2 +1,3 @@
 mcp
-google-cloud-sdk  # Optional, but good to list
+google-cloud-sdk
+langchain-google-vertexai>=1.0.0
