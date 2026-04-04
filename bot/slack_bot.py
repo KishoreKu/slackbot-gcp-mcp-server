@@ -1,7 +1,6 @@
 import os
-import asyncio
+import sys
 from dotenv import load_dotenv
-from fastapi import FastAPI, JSONResponse
 
 load_dotenv()
 
@@ -9,14 +8,15 @@ PROJECT_ID = os.getenv("GCP_PROJECT", "slb-ai-agent-prod")
 REGION = os.getenv("GCP_LOCATION", "us-central1")
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
 
-app = FastAPI(title="Gubbu Bot")
-
+from fastapi import FastAPI
 from slack_bolt.app import App
 from slack_bolt.adapter.fastapi import SlackBoltHandler
 
+app = FastAPI(title="Gubbu Bot")
+
 slack_app = App(
-    token=os.environ.get("SLACK_BOT_TOKEN", "xoxb-placeholder"),
-    signing_secret=os.environ.get("SLACK_SIGNING_SECRET", "placeholder"),
+    token=os.environ.get("SLACK_BOT_TOKEN", ""),
+    signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
 )
 
 
@@ -43,13 +43,13 @@ app.add_route("/slack/interactive", handler.handle_interactivity)
 
 
 @app.get("/health")
-async def health():
-    return JSONResponse({"status": "ok", "service": "gubbu-bot"})
+def health():
+    return {"status": "ok", "service": "gubbu-bot"}
 
 
 @app.get("/")
-async def root():
-    return JSONResponse({"message": "Gubbu Bot is running", "project": PROJECT_ID})
+def root():
+    return {"message": "Gubbu Bot is running", "project": PROJECT_ID}
 
 
 if __name__ == "__main__":
