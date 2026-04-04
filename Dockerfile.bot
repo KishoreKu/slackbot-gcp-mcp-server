@@ -20,11 +20,4 @@ USER gubbu
 
 EXPOSE 8080
 
-CMD ["python", "-c", "
-import os
-import asyncio
-from bot.slack_bot import app, main
-
-if __name__ == '__main__':
-    asyncio.run(main())
-"]
+CMD ["python", "bot/slack_bot.py"]

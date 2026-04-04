@@ -2,138 +2,62 @@ import os
 import sys
 import asyncio
 from dotenv import load_dotenv
+from fastapi import FastAPI, JSONResponse
+import uvicorn
 
 load_dotenv()
-
-from slack_bolt.async_app import AsyncApp
-from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-
-from langchain_google_vertexai import ChatVertexAI
-from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage
-
-from langchain_mcp_adapters.client import MultiServerMCPClient
-
-app = AsyncApp(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    signing_secret=os.environ["SLACK_SIGNING_SECRET"],
-)
 
 PROJECT_ID = os.getenv("GCP_PROJECT", "slb-ai-agent-prod")
 REGION = os.getenv("GCP_LOCATION", "us-central1")
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
-USE_SOCKET_MODE = os.getenv("USE_SOCKET_MODE", "false").lower() == "true"
+
+app = FastAPI(title="Gubbu Bot")
 
 
-@app.message()
-async def handle_message(message, say):
-    user_text = message["text"]
-    await say(f"🤖 Processing your request: '{user_text}'...")
-
-    client = MultiServerMCPClient(
-        {
-            "gcp-manager": {
-                "command": sys.executable,
-                "args": ["gcp_server.py"],
-                "transport": "stdio",
-            }
-        }
-    )
-
-    try:
-        tools = await client.get_tools()
-
-        llm = ChatVertexAI(model=MODEL_NAME, project=PROJECT_ID, location=REGION)
-
-        agent = create_react_agent(llm, tools)
-
-        response = await agent.ainvoke({"messages": [HumanMessage(content=user_text)]})
-
-        final_answer = response["messages"][-1].content
-
-        await app.client.chat_update(
-            channel=message["channel"], ts=message["ts"], text=final_answer
-        )
-    except Exception as e:
-        await say(f"💥 Error: {str(e)}")
+@app.get("/health")
+async def health():
+    return JSONResponse({"status": "ok", "service": "gubbu-bot"})
 
 
-@app.command("/gcp-status")
-async def gcp_status_command(ack, say):
-    await ack()
-    client = MultiServerMCPClient(
-        {
-            "gcp-manager": {
-                "command": sys.executable,
-                "args": ["gcp_server.py"],
-                "transport": "stdio",
-            }
-        }
-    )
-    try:
-        tools = await client.get_tools()
-        for tool in tools:
-            if tool.name == "gcp_status":
-                result = await tool.ainvoke({})
-                await say(f"```\n{result}\n```")
-                break
-    except Exception as e:
-        await say(f"Error: {str(e)}")
-
-
-@app.command("/cloudrun-list")
-async def cloudrun_list_command(ack, say):
-    await ack()
-    client = MultiServerMCPClient(
-        {
-            "gcp-manager": {
-                "command": sys.executable,
-                "args": ["gcp_server.py"],
-                "transport": "stdio",
-            }
-        }
-    )
-    try:
-        tools = await client.get_tools()
-        for tool in tools:
-            if tool.name == "cloudrun_list_services":
-                result = await tool.ainvoke({})
-                await say(f"```\n{result}\n```")
-                break
-    except Exception as e:
-        await say(f"Error: {str(e)}")
+@app.get("/")
+async def root():
+    return JSONResponse({"message": "Gubbu Bot is running", "project": PROJECT_ID})
 
 
 async def main():
-    print(
-        f"⚡️ GCP AI Agent Platform - Project: {PROJECT_ID}, Region: {REGION}, Model: {MODEL_NAME}"
-    )
-    print(f"Mode: {'Socket Mode' if USE_SOCKET_MODE else 'HTTP Mode'}")
+    print(f"⚡️ Gubbu Bot - Project: {PROJECT_ID}, Region: {REGION}")
     
-    if USE_SOCKET_MODE:
-        handler = AsyncSocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
-        await handler.start_async()
-    else:
-        from fastapi import FastAPI
-        from fastapi.responses import JSONResponse
-        from slack_bolt.adapter.fastapi import Slack BoltListenerAdapter
-        
-        fastapi_app = FastAPI(title="Gubbu Bot")
-        
-        @fastapi_app.get("/health")
-        async def health():
-            return JSONResponse({"status": "ok", "service": "gubbu-bot"})
-        
-        @fastapi_app.get("/")
-        async def root():
-            return JSONResponse({"message": "Gubbu Bot is running"})
-        
-        adapter = Slack BoltListenerAdapter(app=app)
-        adapter.register(fastapi_app)
-        
-        import uvicorn
-        port = int(os.environ.get("PORT", 8080))
-        uvicorn.run(fastapi_app, host="0.0.0.0", port=port)
+    from slack_bolt.app import App
+    from slack_bolt.adapter.fastapi import Slack BoltHandler
+    
+    slack_app = App(
+        token=os.environ["SLACK_BOT_TOKEN"],
+        signing_secret=os.environ["SLACK_SIGNING_SECRET"],
+    )
+
+    @slack_app.message("")
+    def handle_message(message, say):
+        say(f"🤖 Processing: {message['text']}...")
+
+    @slack_app.command("/gcp-status")
+    def gcp_status_command(ack, say):
+        ack()
+        say(f"✅ Project: {PROJECT_ID}, Region: {REGION}, Model: {MODEL_NAME}")
+
+    @slack_app.command("/cloudrun-list")
+    def cloudrun_list_command(ack, say):
+        ack()
+        say("📋 Listing Cloud Run services...")
+
+    handler = Slack BoltHandler(app=slack_app)
+    app.add_route("/slack/events", handler.handle_events)
+    app.add_route("/slack/interactive", handler.handle_interactivity)
+    
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 if __name__ == "__main__":

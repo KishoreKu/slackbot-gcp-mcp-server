@@ -44,7 +44,10 @@ jobs:
             --region ${{ env.GCP_REGION }} \
             --platform managed \
             --allow-unauthenticated \
-            --set-env-vars GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }}
+            --set-env-vars GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GCP_REGION=${{ env.GCP_REGION }} \
+            --timeout 600 \
+            --min-instances 0 \
+            --max-instances 1
 
   deploy-bot:
     runs-on: ubuntu-latest
@@ -79,4 +82,7 @@ jobs:
             --image gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --set-env-vars GCP_PROJECT=${{ env.GCP_PROJECT_ID }},GCP_LOCATION=${{ env.GCP_REGION }},GEMINI_MODEL=gemini-2.0-flash-exp,USE_SOCKET_MODE=false,PORT=8080
+            --set-env-vars GCP_PROJECT=${{ env.GCP_PROJECT_ID }},GCP_LOCATION=${{ env.GCP_REGION }},GEMINI_MODEL=gemini-2.0-flash-exp,USE_SOCKET_MODE=false,PORT=8080 \
+            --timeout 600 \
+            --min-instances 0 \
+            --max-instances 1
