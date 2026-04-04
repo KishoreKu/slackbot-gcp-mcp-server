@@ -28,10 +28,13 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
       - name: Build and push anomaly-api
         run: |
           cd anomaly
-          docker build -t gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }} .
+          docker build --platform linux/amd64 -t gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }} .
           docker push gcr.io/${{ env.GCP_PROJECT_ID }}/anomaly-api:${{ github.sha }}
 
       - name: Deploy anomaly-api to Cloud Run
@@ -63,11 +66,11 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker
-        run: gcloud auth configure-docker
+        run: gcloud auth configure-docker --quiet
 
       - name: Build and push gubbu-bot
         run: |
-          docker build -t gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }} -f Dockerfile.bot .
+          docker build --platform linux/amd64 -t gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }} -f Dockerfile.bot .
           docker push gcr.io/${{ env.GCP_PROJECT_ID }}/gubbu-bot:${{ github.sha }}
 
       - name: Deploy gubbu-bot to Cloud Run
