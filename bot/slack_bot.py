@@ -1,5 +1,4 @@
 import os
-import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,7 +9,7 @@ MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
 
 from fastapi import FastAPI
 from slack_bolt.app import App
-from slack_bolt.adapter.fastapi import SlackBoltHandler
+from slack_bolt.adapter.fastapi import SlackRequestHandler
 
 app = FastAPI(title="Gubbu Bot")
 
@@ -18,6 +17,8 @@ slack_app = App(
     token=os.environ.get("SLACK_BOT_TOKEN", ""),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET", ""),
 )
+
+handler = SlackRequestHandler(app=slack_app)
 
 
 @slack_app.message("")
@@ -37,9 +38,8 @@ def cloudrun_list_command(ack, say):
     say("📋 Listing Cloud Run services...")
 
 
-handler = SlackBoltHandler(app=slack_app)
-app.add_route("/slack/events", handler.handle_events)
-app.add_route("/slack/interactive", handler.handle_interactivity)
+app.add_route("/slack/events", handler.handle)
+app.add_route("/slack/interactive", handler.handle)
 
 
 @app.get("/health")
