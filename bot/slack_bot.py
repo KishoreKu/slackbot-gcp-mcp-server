@@ -22,6 +22,7 @@ app = AsyncApp(
 PROJECT_ID = os.getenv("GCP_PROJECT", "slb-ai-agent-prod")
 REGION = os.getenv("GCP_LOCATION", "us-central1")
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+USE_SOCKET_MODE = os.getenv("USE_SOCKET_MODE", "false").lower() == "true"
 
 
 @app.message()
@@ -107,8 +108,32 @@ async def main():
     print(
         f"⚡️ GCP AI Agent Platform - Project: {PROJECT_ID}, Region: {REGION}, Model: {MODEL_NAME}"
     )
-    handler = AsyncSocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
-    await handler.start_async()
+    print(f"Mode: {'Socket Mode' if USE_SOCKET_MODE else 'HTTP Mode'}")
+    
+    if USE_SOCKET_MODE:
+        handler = AsyncSocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
+        await handler.start_async()
+    else:
+        from fastapi import FastAPI
+        from fastapi.responses import JSONResponse
+        from slack_bolt.adapter.fastapi import Slack BoltListenerAdapter
+        
+        fastapi_app = FastAPI(title="Gubbu Bot")
+        
+        @fastapi_app.get("/health")
+        async def health():
+            return JSONResponse({"status": "ok", "service": "gubbu-bot"})
+        
+        @fastapi_app.get("/")
+        async def root():
+            return JSONResponse({"message": "Gubbu Bot is running"})
+        
+        adapter = Slack BoltListenerAdapter(app=app)
+        adapter.register(fastapi_app)
+        
+        import uvicorn
+        port = int(os.environ.get("PORT", 8080))
+        uvicorn.run(fastapi_app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

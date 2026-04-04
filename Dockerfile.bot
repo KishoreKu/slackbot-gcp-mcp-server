@@ -14,7 +14,17 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV GCP_PROJECT=slb-ai-agent-prod
 ENV GCP_LOCATION=us-central1
 ENV GEMINI_MODEL=gemini-2.0-flash-exp
+ENV PORT=8080
 
 USER gubbu
 
-CMD ["python", "bot/slack_bot.py"]
+EXPOSE 8080
+
+CMD ["python", "-c", "
+import os
+import asyncio
+from bot.slack_bot import app, main
+
+if __name__ == '__main__':
+    asyncio.run(main())
+"]
