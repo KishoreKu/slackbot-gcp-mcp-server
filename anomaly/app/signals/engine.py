@@ -379,7 +379,7 @@ SIGNAL_REGISTRY: list[tuple[str, Callable, float]] = [
     ("new_device", signal_new_device, 0.75),
     ("prior_high_risk", signal_prior_high_risk, 0.75),
     ("new_user", signal_new_user, 0.65),
-    ("new_merchant", signal_merchant, 0.50),
+    ("new_merchant", signal_new_merchant, 0.50),
     ("new_merchant_category", signal_new_merchant_category, 0.45),
     ("unusual_hour", signal_unusual_hour, 0.40),
     ("prepaid_card", signal_prepaid_card, 0.35),
